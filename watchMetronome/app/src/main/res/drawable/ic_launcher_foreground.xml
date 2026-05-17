@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer Box (Trapezoid) -->
+    <path
+        android:fillColor="#3C4043"
+        android:pathData="M30,86 L78,86 L62,26 L46,26 Z" />
+        
+    <!-- Inner Panel -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,80 L72,80 L60,32 L48,32 Z" />
+
+    <!-- Pendulum Arm -->
+    <path
+        android:fillColor="#E57373"
+        android:pathData="M52,80 L56,80 L68,34 L66,33 Z" />
+
+    <!-- Pendulum Weight -->
+    <path
+        android:fillColor="#E57373"
+        android:pathData="M59,50 L65,48 L67,56 L61,58 Z" />
+
+    <!-- Pivot Point -->
+    <path
+        android:fillColor="#3C4043"
+        android:pathData="M54,76 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+</vector>
