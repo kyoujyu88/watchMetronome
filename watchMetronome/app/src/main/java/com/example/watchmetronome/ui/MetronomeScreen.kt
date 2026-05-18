@@ -51,6 +51,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import android.app.Activity
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,6 +75,8 @@ fun MetronomeScreen(viewModel: MetronomeViewModel) {
     val rotaryAccumulator = remember { RotaryAccumulator(thresholdPx = 48f) }
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    KeepScreenOn(active = state.isRunning)
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -355,6 +360,28 @@ private fun StartStopButton(isRunning: Boolean, onToggle: () -> Unit, modifier: 
             contentDescription = if (isRunning) "Stop" else "Start",
             modifier = Modifier.size(24.dp)
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 画面常時点灯
+// ---------------------------------------------------------------------------
+
+/**
+ * [active] が true の間だけ FLAG_KEEP_SCREEN_ON をウィンドウに付与する。
+ * Composable が破棄されるとき、または active=false になったときに自動でクリアされる。
+ */
+@Composable
+private fun KeepScreenOn(active: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(active) {
+        val window = (view.context as? Activity)?.window
+        if (active && window != null) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }
 
