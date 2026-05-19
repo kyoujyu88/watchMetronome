@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -40,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
@@ -120,7 +121,8 @@ fun MetronomeScreen(viewModel: MetronomeViewModel) {
             onMinus = { viewModel.adjustBpm(-1) },
             onPlus = { viewModel.adjustBpm(1) },
             onAdjustBpm = viewModel::adjustBpm,
-            onLongPressBeats = viewModel::cycleTimeSignature,
+            onBeatBack = { viewModel.stepTimeSignature(false) },
+            onBeatForward = { viewModel.stepTimeSignature(true) },
             modifier = Modifier.align(Alignment.Center)
         )
 
@@ -195,7 +197,8 @@ private fun BpmControl(
     onMinus: () -> Unit,
     onPlus: () -> Unit,
     onAdjustBpm: (Int) -> Unit,
-    onLongPressBeats: () -> Unit,
+    onBeatBack: () -> Unit,
+    onBeatForward: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -218,12 +221,13 @@ private fun BpmControl(
             StepButton(icon = Icons.Filled.Add, contentDescription = "BPM +1", onClick = onPlus)
         }
         Spacer(Modifier.height(6.dp))
-        BeatDots(
-            currentBeat = state.currentBeat,
-            isRunning = state.isRunning,
-            beatsPerMeasure = state.beatsPerMeasure,
-            onLongPress = onLongPressBeats
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ChevronButton(icon = Icons.Filled.ChevronLeft, contentDescription = "拍子を減らす", onClick = onBeatBack)
+            Spacer(Modifier.width(4.dp))
+            BeatDots(currentBeat = state.currentBeat, isRunning = state.isRunning, beatsPerMeasure = state.beatsPerMeasure)
+            Spacer(Modifier.width(4.dp))
+            ChevronButton(icon = Icons.Filled.ChevronRight, contentDescription = "拍子を増やす", onClick = onBeatForward)
+        }
     }
 }
 
@@ -314,18 +318,23 @@ private fun StepButton(icon: ImageVector, contentDescription: String, onClick: (
 }
 
 @Composable
+private fun ChevronButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.size(28.dp),
+        colors = ButtonDefaults.secondaryButtonColors()
+    ) {
+        Icon(imageVector = icon, contentDescription = contentDescription, modifier = Modifier.size(16.dp))
+    }
+}
+
+@Composable
 private fun BeatDots(
     currentBeat: Int,
     isRunning: Boolean,
-    beatsPerMeasure: Int,
-    onLongPress: () -> Unit
+    beatsPerMeasure: Int
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { onLongPress() })
-        }
-    ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (i in 0 until beatsPerMeasure) {
             val active = isRunning && i == currentBeat
             val color = when {
