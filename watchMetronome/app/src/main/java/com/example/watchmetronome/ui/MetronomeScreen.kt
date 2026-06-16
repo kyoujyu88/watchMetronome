@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -29,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -36,13 +39,22 @@ import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import android.app.Activity
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +66,7 @@ import androidx.wear.compose.material.Text
 import com.example.watchmetronome.MetronomeUiState
 import com.example.watchmetronome.MetronomeViewModel
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @Composable
 fun MetronomeScreen(viewModel: MetronomeViewModel) {
@@ -63,6 +76,8 @@ fun MetronomeScreen(viewModel: MetronomeViewModel) {
     val rotaryAccumulator = remember { RotaryAccumulator(thresholdPx = 48f) }
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    KeepScreenOn(active = state.isRunning)
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -106,7 +121,8 @@ fun MetronomeScreen(viewModel: MetronomeViewModel) {
             onMinus = { viewModel.adjustBpm(-1) },
             onPlus = { viewModel.adjustBpm(1) },
             onAdjustBpm = viewModel::adjustBpm,
-            onLongPressBeats = viewModel::cycleTimeSignature,
+            onBeatBack = { viewModel.stepTimeSignature(false) },
+            onBeatForward = { viewModel.stepTimeSignature(true) },
             modifier = Modifier.align(Alignment.Center)
         )
 
@@ -181,11 +197,10 @@ private fun BpmControl(
     onMinus: () -> Unit,
     onPlus: () -> Unit,
     onAdjustBpm: (Int) -> Unit,
-    onLongPressBeats: () -> Unit,
+    onBeatBack: () -> Unit,
+    onBeatForward: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var dragAccumulator by remember { mutableFloatStateOf(0f) }
-
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -193,49 +208,101 @@ private fun BpmControl(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepButton(icon = Icons.Filled.Remove, contentDescription = "BPM -1", onClick = onMinus)
-            Spacer(Modifier.width(12.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragStart = { dragAccumulator = 0f },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragAccumulator += dragAmount
-                            
-                            // 上スクロール(dragAmount < 0)でBPM増加
-                            val sensitivity = 10f
-                            val steps = (-dragAccumulator / sensitivity).toInt()
-                            if (steps != 0) {
-                                onAdjustBpm(steps)
-                                dragAccumulator += steps * sensitivity
-                            }
-                        }
-                    )
-                }
-            ) {
-                Text(
-                    text = state.bpm.toString(),
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colors.onBackground
-                )
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                DrumRollBpmPicker(bpm = state.bpm, onAdjustBpm = onAdjustBpm)
                 Text(
                     text = "BPM",
                     fontSize = 10.sp,
                     color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
                 )
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             StepButton(icon = Icons.Filled.Add, contentDescription = "BPM +1", onClick = onPlus)
         }
         Spacer(Modifier.height(6.dp))
-        BeatDots(
-            currentBeat = state.currentBeat,
-            isRunning = state.isRunning,
-            beatsPerMeasure = state.beatsPerMeasure,
-            onLongPress = onLongPressBeats
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ChevronButton(icon = Icons.Filled.ChevronLeft, contentDescription = "拍子を減らす", onClick = onBeatBack)
+            Spacer(Modifier.width(4.dp))
+            BeatDots(currentBeat = state.currentBeat, isRunning = state.isRunning, beatsPerMeasure = state.beatsPerMeasure)
+            Spacer(Modifier.width(4.dp))
+            ChevronButton(icon = Icons.Filled.ChevronRight, contentDescription = "拍子を増やす", onClick = onBeatForward)
+        }
+    }
+}
+
+@Composable
+private fun DrumRollBpmPicker(
+    bpm: Int,
+    onAdjustBpm: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val itemHeightPx = with(LocalDensity.current) { 44.dp.toPx() }
+    val coroutineScope = rememberCoroutineScope()
+    val animOffset = remember { Animatable(0f) }
+    val dragTotal = remember { mutableFloatStateOf(0f) }
+    val appliedSteps = remember { mutableIntStateOf(0) }
+
+    Box(
+        modifier = modifier
+            .height(132.dp)
+            .clipToBounds()
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        coroutineScope.launch { animOffset.stop() }
+                        dragTotal.floatValue = 0f
+                        appliedSteps.intValue = 0
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        dragTotal.floatValue += dragAmount
+                        val rawSteps = (-dragTotal.floatValue / itemHeightPx).toInt()
+                        val newApplied = rawSteps - appliedSteps.intValue
+                        if (newApplied != 0) {
+                            onAdjustBpm(newApplied)
+                            appliedSteps.intValue = rawSteps
+                        }
+                        val visualOffset = dragTotal.floatValue + rawSteps * itemHeightPx
+                        coroutineScope.launch { animOffset.snapTo(visualOffset) }
+                    },
+                    onDragEnd = {
+                        dragTotal.floatValue = 0f
+                        appliedSteps.intValue = 0
+                        coroutineScope.launch {
+                            animOffset.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        for (i in -2..2) {
+            val value = bpm + i
+            if (value !in MetronomeUiState.MIN_BPM..MetronomeUiState.MAX_BPM) continue
+            val yOffset = i * itemHeightPx + animOffset.value
+            val absDistance = abs(yOffset) / itemHeightPx
+            val alpha = (1f - absDistance * 0.6f).coerceIn(0f, 1f)
+            val scale = (1f - absDistance * 0.2f).coerceIn(0.5f, 1f)
+            Text(
+                text = value.toString(),
+                fontSize = 40.sp,
+                fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal,
+                color = MaterialTheme.colors.onBackground,
+                modifier = Modifier.graphicsLayer {
+                    translationY = yOffset
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                }
+            )
+        }
     }
 }
 
@@ -251,18 +318,23 @@ private fun StepButton(icon: ImageVector, contentDescription: String, onClick: (
 }
 
 @Composable
+private fun ChevronButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.size(28.dp),
+        colors = ButtonDefaults.secondaryButtonColors()
+    ) {
+        Icon(imageVector = icon, contentDescription = contentDescription, modifier = Modifier.size(16.dp))
+    }
+}
+
+@Composable
 private fun BeatDots(
     currentBeat: Int,
     isRunning: Boolean,
-    beatsPerMeasure: Int,
-    onLongPress: () -> Unit
+    beatsPerMeasure: Int
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { onLongPress() })
-        }
-    ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (i in 0 until beatsPerMeasure) {
             val active = isRunning && i == currentBeat
             val color = when {
@@ -297,6 +369,28 @@ private fun StartStopButton(isRunning: Boolean, onToggle: () -> Unit, modifier: 
             contentDescription = if (isRunning) "Stop" else "Start",
             modifier = Modifier.size(24.dp)
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 画面常時点灯
+// ---------------------------------------------------------------------------
+
+/**
+ * [active] が true の間だけ FLAG_KEEP_SCREEN_ON をウィンドウに付与する。
+ * Composable が破棄されるとき、または active=false になったときに自動でクリアされる。
+ */
+@Composable
+private fun KeepScreenOn(active: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(active) {
+        val window = (view.context as? Activity)?.window
+        if (active && window != null) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }
 

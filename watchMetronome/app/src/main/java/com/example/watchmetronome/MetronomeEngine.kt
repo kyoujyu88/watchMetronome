@@ -118,7 +118,7 @@ class MetronomeEngine(context: Context) {
         private val track: AudioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
@@ -131,6 +131,7 @@ class MetronomeEngine(context: Context) {
             )
             .setBufferSizeInBytes(samples.size * 2)
             .setTransferMode(AudioTrack.MODE_STATIC)
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
 
         init {

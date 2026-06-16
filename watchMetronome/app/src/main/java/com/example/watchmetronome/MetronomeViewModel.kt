@@ -112,13 +112,13 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         if (_state.value.isRunning) stop() else start()
     }
 
-    fun cycleTimeSignature() {
-        val next = when (_state.value.beatsPerMeasure) {
-            2 -> 3
-            3 -> 4
-            4 -> 6
-            6 -> 2
-            else -> 4
+    fun stepTimeSignature(forward: Boolean) {
+        val steps = listOf(2, 3, 4, 6)
+        val idx = steps.indexOf(_state.value.beatsPerMeasure).coerceAtLeast(0)
+        val next = if (forward) {
+            steps[(idx + 1) % steps.size]
+        } else {
+            steps[(idx - 1 + steps.size) % steps.size]
         }
         engine.beatsPerMeasure = next
         _state.value = _state.value.copy(beatsPerMeasure = next)
